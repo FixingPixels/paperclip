@@ -3,6 +3,7 @@ export function hasCursorTrustBypassArg(args: readonly string[]): boolean {
     (arg) =>
       arg === "--trust" ||
       arg === "--yolo" ||
+      arg === "--force" ||
       arg === "-f" ||
       arg.startsWith("--trust="),
   );

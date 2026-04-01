@@ -16,6 +16,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "../index.js";
+import {
+  copyPathEnvForSpawn,
+  prependCursorAgentInstallBinToPath,
+  resolveCursorAgentExecutable,
+} from "./cursor-agent-path.js";
 import { parseCursorJsonl } from "./parse.js";
 import { hasCursorTrustBypassArg } from "../shared/trust.js";
 
@@ -38,9 +43,9 @@ function firstNonEmptyLine(text: string): string {
   );
 }
 
-function commandLooksLike(command: string, expected: string): boolean {
-  const base = path.basename(command).toLowerCase();
-  return base === expected || base === `${expected}.cmd` || base === `${expected}.exe`;
+function commandLooksLikeCursorCli(command: string): boolean {
+  const base = path.basename(command).replace(/\.(exe|cmd)$/i, "").toLowerCase();
+  return base === "agent" || base === "cursor-agent";
 }
 
 function summarizeProbeDetail(stdout: string, stderr: string, parsedError: string | null): string | null {
@@ -119,19 +124,22 @@ export async function testEnvironment(
     if (typeof value === "string") env[key] = value;
   }
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
+  prependCursorAgentInstallBinToPath(runtimeEnv);
+  const probeCommand = resolveCursorAgentExecutable(command, runtimeEnv);
+  copyPathEnvForSpawn(runtimeEnv, env);
   try {
-    await ensureCommandResolvable(command, cwd, runtimeEnv);
+    await ensureCommandResolvable(probeCommand, cwd, runtimeEnv);
     checks.push({
       code: "cursor_command_resolvable",
       level: "info",
-      message: `Command is executable: ${command}`,
+      message: `Command is executable: ${probeCommand}`,
     });
   } catch (err) {
     checks.push({
       code: "cursor_command_unresolvable",
       level: "error",
       message: err instanceof Error ? err.message : "Command is not executable",
-      detail: command,
+      detail: probeCommand,
     });
   }
 
@@ -170,13 +178,13 @@ export async function testEnvironment(
   const canRunProbe =
     checks.every((check) => check.code !== "cursor_cwd_invalid" && check.code !== "cursor_command_unresolvable");
   if (canRunProbe) {
-    if (!commandLooksLike(command, "agent")) {
+    if (!commandLooksLikeCursorCli(probeCommand)) {
       checks.push({
         code: "cursor_hello_probe_skipped_custom_command",
         level: "info",
-        message: "Skipped hello probe because command is not `agent`.",
-        detail: command,
-        hint: "Use the `agent` CLI command to run the automatic installation and auth probe.",
+        message: "Skipped hello probe because command is not the Cursor CLI (`agent` / `cursor-agent`).",
+        detail: probeCommand,
+        hint: "Use the Cursor CLI (`agent`) to run the automatic installation and auth probe.",
       });
     } else {
       const model = asString(config.model, DEFAULT_CURSOR_LOCAL_MODEL).trim();
@@ -188,13 +196,13 @@ export async function testEnvironment(
       const autoTrustEnabled = !hasCursorTrustBypassArg(extraArgs);
       const args = ["-p", "--mode", "ask", "--output-format", "json", "--workspace", cwd];
       if (model) args.push("--model", model);
-      if (autoTrustEnabled) args.push("--yolo");
+      if (autoTrustEnabled) args.push("--force");
       if (extraArgs.length > 0) args.push(...extraArgs);
       args.push("Respond with hello.");
 
       const probe = await runChildProcess(
         `cursor-envtest-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        command,
+        probeCommand,
         args,
         {
           cwd,

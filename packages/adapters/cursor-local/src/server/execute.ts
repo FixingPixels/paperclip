@@ -15,7 +15,6 @@ import {
   ensurePaperclipSkillSymlink,
   ensurePathInEnv,
   readPaperclipRuntimeSkillEntries,
-  resolveCommandForLogs,
   resolvePaperclipDesiredSkillNames,
   removeMaintainerOnlySkillSymlinks,
   renderTemplate,
@@ -23,6 +22,11 @@ import {
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "../index.js";
+import {
+  copyPathEnvForSpawn,
+  prependCursorAgentInstallBinToPath,
+  resolveCursorAgentExecutable,
+} from "./cursor-agent-path.js";
 import { parseCursorJsonl, isCursorUnknownSessionError } from "./parse.js";
 import { normalizeCursorStreamLine } from "../shared/stream.js";
 import { hasCursorTrustBypassArg } from "../shared/trust.js";
@@ -271,8 +275,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   );
   const billingType = resolveCursorBillingType(effectiveEnv);
   const runtimeEnv = ensurePathInEnv(effectiveEnv);
-  await ensureCommandResolvable(command, cwd, runtimeEnv);
-  const resolvedCommand = await resolveCommandForLogs(command, cwd, runtimeEnv);
+  prependCursorAgentInstallBinToPath(runtimeEnv);
+  const resolvedCommand = resolveCursorAgentExecutable(command, runtimeEnv);
+  copyPathEnvForSpawn(runtimeEnv, env);
+  await ensureCommandResolvable(resolvedCommand, cwd, runtimeEnv);
   const loggedEnv = buildInvocationEnvForLogs(env, {
     runtimeEnv,
     includeRuntimeKeys: ["HOME"],
@@ -325,7 +331,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const commandNotes = (() => {
     const notes: string[] = [];
     if (autoTrustEnabled) {
-      notes.push("Auto-added --yolo to bypass interactive prompts.");
+      notes.push("Auto-added --force to bypass interactive prompts.");
     }
     notes.push("Prompt is piped to Cursor via stdin.");
     if (!instructionsFilePath) return notes;
@@ -380,7 +386,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (resumeSessionId) args.push("--resume", resumeSessionId);
     if (model) args.push("--model", model);
     if (mode) args.push("--mode", mode);
-    if (autoTrustEnabled) args.push("--yolo");
+    if (autoTrustEnabled) args.push("--force");
     if (extraArgs.length > 0) args.push(...extraArgs);
     return args;
   };
@@ -425,7 +431,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       }
     };
 
-    const proc = await runChildProcess(runId, command, args, {
+    const proc = await runChildProcess(runId, resolvedCommand, args, {
       cwd,
       env,
       timeoutSec,

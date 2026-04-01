@@ -268,6 +268,21 @@ async function pathExists(candidate: string) {
   }
 }
 
+/** PATH / Path coalescing: empty string must not mask the other key (common on Windows). */
+function pathSearchDirectoriesEnvValue(env: NodeJS.ProcessEnv): string {
+  const pathUpper = env.PATH;
+  const pathTitle = env.Path;
+  const win = process.platform === "win32";
+  if (win) {
+    if (typeof pathTitle === "string" && pathTitle.length > 0) return pathTitle;
+    if (typeof pathUpper === "string" && pathUpper.length > 0) return pathUpper;
+    return "";
+  }
+  if (typeof pathUpper === "string" && pathUpper.length > 0) return pathUpper;
+  if (typeof pathTitle === "string" && pathTitle.length > 0) return pathTitle;
+  return "";
+}
+
 async function resolveCommandPath(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<string | null> {
   const hasPathSeparator = command.includes("/") || command.includes("\\");
   if (hasPathSeparator) {
@@ -275,7 +290,7 @@ async function resolveCommandPath(command: string, cwd: string, env: NodeJS.Proc
     return (await pathExists(absolute)) ? absolute : null;
   }
 
-  const pathValue = env.PATH ?? env.Path ?? "";
+  const pathValue = pathSearchDirectoriesEnvValue(env);
   const delimiter = process.platform === "win32" ? ";" : ":";
   const dirs = pathValue.split(delimiter).filter(Boolean);
   const exts = process.platform === "win32" ? windowsPathExts(env) : [""];

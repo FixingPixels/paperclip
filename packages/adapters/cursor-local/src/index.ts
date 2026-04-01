@@ -1,11 +1,10 @@
 export const type = "cursor";
 export const label = "Cursor CLI (local)";
-export const DEFAULT_CURSOR_LOCAL_MODEL = "auto";
+export const DEFAULT_CURSOR_LOCAL_MODEL = "composer-2.0";
 
 const CURSOR_FALLBACK_MODEL_IDS = [
   "auto",
   "composer-1.5",
-  "composer-1",
   "gpt-5.3-codex-low",
   "gpt-5.3-codex-low-fast",
   "gpt-5.3-codex",
@@ -75,9 +74,10 @@ Operational fields:
 - graceSec (number, optional): SIGTERM grace period in seconds
 
 Notes:
+- Cursor installs the CLI as ~/.local/bin/agent; Paperclip prepends that directory on macOS/Linux if PATH omits it.
 - Runs are executed with: agent -p --output-format stream-json ...
 - Prompts are piped to Cursor via stdin.
 - Sessions are resumed with --resume when stored session cwd matches current cwd.
 - Paperclip auto-injects local skills into "~/.cursor/skills" when missing, so Cursor can discover "$paperclip" and related skills on local runs.
-- Paperclip auto-adds --yolo unless one of --trust/--yolo/-f is already present in extraArgs.
+- Paperclip auto-adds --force unless one of --trust/--force/--yolo/-f is already present in extraArgs.
 `;

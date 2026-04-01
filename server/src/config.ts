@@ -24,16 +24,51 @@ import {
   resolveHomeAwarePath,
 } from "./home-paths.js";
 
+/** When running `pnpm --filter @paperclipai/server dev`, cwd is `server/`; repo secrets often live in the workspace root `.env`. */
+function resolveWorkspaceRootEnvPath(startDir: string): string | null {
+  let currentDir = resolve(startDir);
+  while (true) {
+    if (existsSync(resolve(currentDir, "pnpm-workspace.yaml"))) {
+      const envPath = resolve(currentDir, ".env");
+      return existsSync(envPath) ? envPath : null;
+    }
+    const nextDir = resolve(currentDir, "..");
+    if (nextDir === currentDir) return null;
+    currentDir = nextDir;
+  }
+}
+
+function envFileRealpath(filePath: string): string | null {
+  try {
+    return existsSync(filePath) ? realpathSync(filePath) : null;
+  } catch {
+    return null;
+  }
+}
+
 const PAPERCLIP_ENV_FILE_PATH = resolvePaperclipEnvPath();
 if (existsSync(PAPERCLIP_ENV_FILE_PATH)) {
   loadDotenv({ path: PAPERCLIP_ENV_FILE_PATH, override: false, quiet: true });
+}
+
+const WORKSPACE_ROOT_ENV_PATH = resolveWorkspaceRootEnvPath(process.cwd());
+let workspaceRootEnvReal: string | null = null;
+if (WORKSPACE_ROOT_ENV_PATH) {
+  const paperclipReal = envFileRealpath(PAPERCLIP_ENV_FILE_PATH);
+  workspaceRootEnvReal = envFileRealpath(WORKSPACE_ROOT_ENV_PATH);
+  if (workspaceRootEnvReal !== null && workspaceRootEnvReal !== paperclipReal) {
+    loadDotenv({ path: WORKSPACE_ROOT_ENV_PATH, override: false, quiet: true });
+  }
 }
 
 const CWD_ENV_PATH = resolve(process.cwd(), ".env");
 const isSameFile = existsSync(CWD_ENV_PATH) && existsSync(PAPERCLIP_ENV_FILE_PATH)
   ? realpathSync(CWD_ENV_PATH) === realpathSync(PAPERCLIP_ENV_FILE_PATH)
   : CWD_ENV_PATH === PAPERCLIP_ENV_FILE_PATH;
-if (!isSameFile && existsSync(CWD_ENV_PATH)) {
+const cwdEnvReal = envFileRealpath(CWD_ENV_PATH);
+const isSameFileAsWorkspaceRoot =
+  workspaceRootEnvReal != null && cwdEnvReal != null && cwdEnvReal === workspaceRootEnvReal;
+if (!isSameFile && !isSameFileAsWorkspaceRoot && existsSync(CWD_ENV_PATH)) {
   loadDotenv({ path: CWD_ENV_PATH, override: false, quiet: true });
 }
 
